@@ -8,6 +8,9 @@ class HanziLearningApp {
     this.userProfile = null;
     this.currentCharacter = null;
     
+    // 用于跟踪中文输入法的组合状态
+    this.isComposing = false;
+    
     // 初始化应用
     this.init();
   }
@@ -28,10 +31,23 @@ class HanziLearningApp {
   
   // 注册事件监听器
   registerEventListeners() {
-    // 汉字搜索表单
-    document.getElementById("searchForm").addEventListener("submit", (e) => {
+    const searchInput = document.getElementById("characterInput");
+    const searchForm = document.getElementById("searchForm");
+    
+    // 处理中文输入法的组合事件
+    searchInput.addEventListener("compositionstart", () => {
+      this.isComposing = true;
+    });
+    searchInput.addEventListener("compositionend", () => {
+      this.isComposing = false;
+    });
+    
+    // 汉字搜索表单提交
+    searchForm.addEventListener("submit", (e) => {
       e.preventDefault();
-      const character = document.getElementById("characterInput").value.trim();
+      // 避免在输入法组合过程中提交表单
+      if (this.isComposing) return;
+      const character = searchInput.value.trim();
       this.searchCharacter(character);
     });
     
@@ -55,7 +71,7 @@ class HanziLearningApp {
         this.searchCharacter(e.target.textContent);
       }
       
-      // 处理标记为已学习按钮
+      // 处理“标记为已学习”按钮
       if (e.target.id === 'markLearned') {
         this.markCurrentCharacterAsLearned();
       }
@@ -324,7 +340,7 @@ class HanziLearningApp {
   
   // 显示消息
   showMessage(message, type = "info") {
-    alert(message); // 简单实现，可以改为更友好的UI消息
+    alert(message); // 简单实现，可以改为更友好的UI消息显示机制
   }
 }
 
