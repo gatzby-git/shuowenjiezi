@@ -1,6 +1,6 @@
 // DeepSeek AI服务封装 - 优化版
 
-const DEEPSEEK_API_KEY = "sk-ad01995ea5054ad7999f4ae89e88592a"; // 您的API密钥
+const DEEPSEEK_API_KEY = "sk-cfdf864d03294b89bfb89ded82b16313"; // 您的API密钥
 // 根据 DeepSeek API 文档，为了兼容 OpenAI 格式，建议将 base_url 设置为 "https://api.deepseek.com/v1"
 const API_BASE_URL = "https://api.deepseek.com/v1"; 
 const API_ENDPOINT = "/chat/completions"; // 完整endpoint为 https://api.deepseek.com/v1/chat/completions
@@ -14,13 +14,11 @@ class AICharacterService {
   
   // 获取汉字详细信息
   async getCharacter(character) {
-    // 检查输入有效性
     if (!character || typeof character !== 'string' || character.length !== 1) {
       console.error("无效的汉字输入:", character);
       return null;
     }
     
-    // 检查缓存
     if (this.cache.characters && this.cache.characters[character]) {
       console.log("从缓存中获取汉字数据:", character);
       return this.cache.characters[character];
@@ -29,7 +27,6 @@ class AICharacterService {
     console.log("从AI获取汉字数据:", character);
     
     try {
-      // 构建提示以请求结构化数据
       const prompt = `请提供汉字"${character}"的以下结构化信息，直接返回JSON格式:
 {
   "character": "${character}",
@@ -43,16 +40,13 @@ class AICharacterService {
 }
 只返回JSON，不要有其他文字。`;
       
-      const response = await this._callDeepSeekAPI(prompt);
-      let characterData;
+      let response = await this._callDeepSeekAPI(prompt, "deepseek-chat");
       
+      let characterData;
       try {
-        // 尝试解析JSON响应 - 使用更健壮的方法
         const jsonMatch = this._extractJSON(response);
         if (jsonMatch) {
           characterData = JSON.parse(jsonMatch);
-          
-          // 验证必要字段
           if (!characterData.character) {
             characterData.character = character;
           }
@@ -60,23 +54,37 @@ class AICharacterService {
           throw new Error("无法从响应中提取JSON");
         }
       } catch (parseError) {
-        console.warn("解析AI响应失败:", parseError.message);
-        console.info("原始响应:", response);
-        
-        // 创建基本结构的对象
-        characterData = {
-          character: character,
-          type: "未知",
-          level: 1,
-          explanation: this._extractPlainText(response, 500),
-          components: [],
-          evolution: [],
-          relatedCharacters: [],
-          commonWords: []
-        };
+        console.warn("解析 deepseek-chat 响应失败:", parseError.message);
+        console.info("deepseek-chat 原始响应:", response);
+        // 如果 deepseek-chat 解析失败，尝试使用 deepseek-reasoner 模型重新调用
+        response = await this._callDeepSeekAPI(prompt, "deepseek-reasoner");
+        try {
+          const jsonMatch = this._extractJSON(response);
+          if (jsonMatch) {
+            characterData = JSON.parse(jsonMatch);
+            if (!characterData.character) {
+              characterData.character = character;
+            }
+          } else {
+            throw new Error("无法从 deepseek-reasoner 响应中提取JSON");
+          }
+        } catch (parseError2) {
+          console.warn("解析 deepseek-reasoner 响应失败:", parseError2.message);
+          console.info("deepseek-reasoner 原始响应:", response);
+          // 若全部失败，则返回 fallback 数据
+          characterData = {
+            character: character,
+            type: "未知",
+            level: 1,
+            explanation: this._extractPlainText(response, 500),
+            components: [],
+            evolution: [],
+            relatedCharacters: [],
+            commonWords: []
+          };
+        }
       }
       
-      // 存入缓存
       if (!this.cache.characters) this.cache.characters = {};
       this.cache.characters[character] = characterData;
       this._saveCache();
@@ -96,12 +104,23 @@ class AICharacterService {
   // 从文本中提取JSON
   _extractJSON(text) {
     if (!text) return null;
+    // 尝试使用简化逻辑：直接查找首个 '{' 到最后一个 '}'
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    if (start !== -1 && end !== -1 && end > start) {
+      const candidate = text.substring(start, end + 1);
+      try {
+        JSON.parse(candidate);
+        return candidate;
+      } catch (e) {
+        // 如果直接解析失败，则再尝试原有多模式正则方法
+      }
+    }
     
-    // 尝试多种模式匹配JSON
     const patterns = [
-      /```json\s*([\s\S]*?)\s*```/i, // Markdown风格的JSON代码块
-      /```\s*([\s\S]*?)\s*```/i,     // 一般的代码块
-      /\{[\s\S]*\}/                  // 花括号包含的JSON
+      /```json\s*([\s\S]*?)\s*```/i,
+      /```\s*([\s\S]*?)\s*```/i,
+      /\{[\s\S]*\}/
     ];
     
     for (const pattern of patterns) {
@@ -111,7 +130,7 @@ class AICharacterService {
           JSON.parse(match[1]);
           return match[1];
         } catch (e) {
-          continue; // 如果解析失败，尝试下一个模式
+          continue;
         }
       } else if (match) {
         try {
@@ -123,36 +142,13 @@ class AICharacterService {
       }
     }
     
-    // 如果上述模式都失败，尝试查找大括号包含的最长内容
-    try {
-      const startIdx = text.indexOf('{');
-      if (startIdx !== -1) {
-        let bracketCount = 1;
-        let endIdx = startIdx + 1;
-        
-        while (bracketCount > 0 && endIdx < text.length) {
-          if (text[endIdx] === '{') bracketCount++;
-          if (text[endIdx] === '}') bracketCount--;
-          endIdx++;
-        }
-        
-        if (bracketCount === 0) {
-          const jsonStr = text.substring(startIdx, endIdx);
-          JSON.parse(jsonStr);
-          return jsonStr;
-        }
-      }
-    } catch (e) {
-      console.warn("尝试提取JSON失败:", e.message);
-    }
-    
+    console.warn("未能提取有效的 JSON 片段");
     return null;
   }
   
   // 从响应中提取纯文本
   _extractPlainText(text, maxLength = 1000) {
     if (!text) return "";
-    
     const cleanText = text
       .replace(/```[\s\S]*?```/g, '')
       .replace(/\[.*?\]\(.*?\)/g, '')
@@ -160,7 +156,6 @@ class AICharacterService {
       .replace(/\*\*/g, '')
       .replace(/\*/g, '')
       .trim();
-    
     return cleanText.substring(0, maxLength);
   }
   
@@ -183,12 +178,10 @@ class AICharacterService {
 请以适合小学生理解的方式组织回答，语言生动有趣，内容既要专业又要通俗易懂。`;
     
     try {
-      const analysis = await this._callDeepSeekAPI(prompt);
-      
+      const analysis = await this._callDeepSeekAPI(prompt, "deepseek-chat");
       if (!this.cache.analyses) this.cache.analyses = {};
       this.cache.analyses[cacheKey] = analysis;
       this._saveCache();
-      
       return analysis;
     } catch (error) {
       console.error("获取汉字分析失败:", error.message);
@@ -212,12 +205,10 @@ class AICharacterService {
 如果您知道具体的字形演变，请简要描述每个阶段的视觉特征，如果不确定，请基于汉字构形原理进行合理推测。`;
     
     try {
-      const evolution = await this._callDeepSeekAPI(prompt);
-      
+      const evolution = await this._callDeepSeekAPI(prompt, "deepseek-chat");
       if (!this.cache.evolutions) this.cache.evolutions = {};
       this.cache.evolutions[cacheKey] = evolution;
-      this._saveCache();
-      
+      this._saveCache();  
       return evolution;
     } catch (error) {
       console.error("获取汉字演化描述失败:", error.message);
@@ -251,9 +242,8 @@ class AICharacterService {
 }
 只返回JSON，不要有其他文字。`;
       
-      const response = await this._callDeepSeekAPI(prompt);
+      const response = await this._callDeepSeekAPI(prompt, "deepseek-chat");
       let recommendedChars;
-      
       try {
         const jsonStr = this._extractJSON(response);
         if (jsonStr) {
@@ -319,9 +309,8 @@ class AICharacterService {
 }
 只返回JSON，不要有其他文字。`;
       
-      const response = await this._callDeepSeekAPI(prompt);
+      const response = await this._callDeepSeekAPI(prompt, "deepseek-chat");
       let recommendedChars;
-      
       try {
         const jsonStr = this._extractJSON(response);
         if (jsonStr) {
@@ -365,7 +354,6 @@ class AICharacterService {
     
     const level = parseInt(userProfile.grade) || 1;
     const interests = Array.isArray(userProfile.interests) ? userProfile.interests : [];
-    
     let interestPrompt = "";
     if (interests.length > 0) {
       interestPrompt = `，特别是与${interests.join('、')}相关的汉字`;
@@ -385,8 +373,7 @@ class AICharacterService {
 }`;
     
     try {
-      const response = await this._callDeepSeekAPI(prompt);
-      
+      const response = await this._callDeepSeekAPI(prompt, "deepseek-chat");
       try {
         const jsonStr = this._extractJSON(response);
         if (jsonStr) {
@@ -399,12 +386,10 @@ class AICharacterService {
             return data;
           }
         }
-        
         const chars = response.split(/[,，、]/)
           .map(c => c.trim())
           .filter(c => c.length === 1)
           .slice(0, 8);
-          
         return { 
           related_characters: chars.map(c => ({
             character: c,
@@ -423,7 +408,7 @@ class AICharacterService {
   }
   
   // 调用DeepSeek API (带重试机制)
-  async _callDeepSeekAPI(prompt, retryCount = 0) {
+  async _callDeepSeekAPI(prompt, model = "deepseek-chat", retryCount = 0) {
     try {
       const response = await fetch(`${API_BASE_URL}${API_ENDPOINT}`, {
         method: 'POST',
@@ -432,7 +417,7 @@ class AICharacterService {
           'Authorization': `Bearer ${DEEPSEEK_API_KEY}`
         },
         body: JSON.stringify({
-          model: "deepseek-chat", // 使用 DeepSeek-V3 模型
+          model, // 使用传入的模型参数，默认为 deepseek-chat
           messages: [
             { 
               role: "system", 
@@ -455,19 +440,18 @@ class AICharacterService {
       }
       
       const data = await response.json();
-      
       if (!data.choices || !data.choices[0] || !data.choices[0].message || !data.choices[0].message.content) {
         throw new Error("API响应格式无效");
       }
       
       return data.choices[0].message.content;
     } catch (error) {
-      console.error(`DeepSeek API调用错误 (尝试 ${retryCount + 1}/${this.maxRetries + 1}):`, error.message);
+      console.error(`DeepSeek API调用错误 (尝试 ${retryCount + 1}/${this.maxRetries + 1}) 模型(${model}):`, error.message);
       if (retryCount < this.maxRetries) {
         const backoffTime = Math.pow(2, retryCount) * 1000;
         console.log(`${backoffTime}毫秒后重试...`);
         await new Promise(resolve => setTimeout(resolve, backoffTime));
-        return this._callDeepSeekAPI(prompt, retryCount + 1);
+        return this._callDeepSeekAPI(prompt, model, retryCount + 1);
       }
       throw error;
     }
@@ -489,7 +473,6 @@ class AICharacterService {
     } catch (e) {
       console.warn("加载缓存失败:", e.message);
     }
-    
     return {
       characters: {},
       recommendations: {},
@@ -506,7 +489,6 @@ class AICharacterService {
         console.warn("缓存接近大小限制，执行清理...");
         this.cache.recommendations = {};
       }
-      
       localStorage.setItem('aiCharacterCache', JSON.stringify(this.cache));
     } catch (e) {
       console.warn("保存缓存失败:", e.message);
@@ -554,7 +536,6 @@ class AICharacterService {
         {"character": "暖", "type": "形声字", "reason": "日部与爰声"}
       ]
     };
-    
     return defaults[level] || defaults[1];
   }
 }
