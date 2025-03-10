@@ -1,6 +1,6 @@
 // DeepSeek AI服务封装 - 优化版
 
-const DEEPSEEK_API_KEY = "sk-cfdf864d03294b89bfb89ded82b16313"; // 您的API密钥
+const DEEPSEEK_API_KEY = "sk-ad01995ea5054ad7999f4ae89e88592a"; // 您的API密钥
 // 根据 DeepSeek API 文档，为了兼容 OpenAI 格式，建议将 base_url 设置为 "https://api.deepseek.com/v1"
 const API_BASE_URL = "https://api.deepseek.com/v1"; 
 const API_ENDPOINT = "/chat/completions"; // 完整endpoint为 https://api.deepseek.com/v1/chat/completions
@@ -76,7 +76,7 @@ class AICharacterService {
             character: character,
             type: "未知",
             level: 1,
-            explanation: this._extractPlainText(response, 500),
+            explanation: this._extractPlainText(response, 500) + " (deepseek 调用失败)",
             components: [],
             evolution: [],
             relatedCharacters: [],
@@ -94,7 +94,7 @@ class AICharacterService {
       console.error("AI汉字数据获取失败:", error.message);
       return {
         character: character,
-        explanation: "抱歉，无法获取该汉字的信息。",
+        explanation: "抱歉，无法获取该汉字的信息。deepseek 调用失败",
         components: [],
         relatedCharacters: []
       };
@@ -185,7 +185,7 @@ class AICharacterService {
       return analysis;
     } catch (error) {
       console.error("获取汉字分析失败:", error.message);
-      return `抱歉，暂时无法分析"${character}"字。请稍后再试。`;
+      return `抱歉，暂时无法分析"${character}"字。deepseek 调用失败`;
     }
   }
   
@@ -212,7 +212,7 @@ class AICharacterService {
       return evolution;
     } catch (error) {
       console.error("获取汉字演化描述失败:", error.message);
-      return `抱歉，暂时无法获取"${character}"的演化描述。请稍后再试。`;
+      return `抱歉，暂时无法获取"${character}"的演化描述。deepseek 调用失败`;
     }
   }
   
@@ -453,7 +453,8 @@ class AICharacterService {
         await new Promise(resolve => setTimeout(resolve, backoffTime));
         return this._callDeepSeekAPI(prompt, model, retryCount + 1);
       }
-      throw error;
+      // 当所有重试失败后，将错误消息中附加显示“deepseek 调用失败”
+      throw new Error("deepseek 调用失败: " + error.message);
     }
   }
   
