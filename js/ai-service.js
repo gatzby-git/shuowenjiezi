@@ -1,8 +1,9 @@
 // DeepSeek AI服务封装 - 优化版
 
 const DEEPSEEK_API_KEY = "sk-ad01995ea5054ad7999f4ae89e88592a"; // 您的API密钥
-const API_BASE_URL = "https://api.deepseek.com"; // DeepSeek API基础URL
-const API_ENDPOINT = "/v1/chat/completions"; // 完整endpoint为 https://api.deepseek.com/v1/chat/completions
+// 根据 DeepSeek API 文档，为了兼容 OpenAI 格式，建议将 base_url 设置为 "https://api.deepseek.com/v1"
+const API_BASE_URL = "https://api.deepseek.com/v1"; 
+const API_ENDPOINT = "/chat/completions"; // 完整endpoint为 https://api.deepseek.com/v1/chat/completions
 
 class AICharacterService {
   constructor() {
@@ -30,17 +31,17 @@ class AICharacterService {
     try {
       // 构建提示以请求结构化数据
       const prompt = `请提供汉字"${character}"的以下结构化信息，直接返回JSON格式:
-      {
-        "character": "${character}",
-        "type": "汉字类型(独体象形/基础会意/复合形声)",
-        "level": 适合学习的年级数字(1-6),
-        "explanation": "详细解释，包括构字理据、本义、演变等",
-        "components": ["组成部件列表"],
-        "evolution": ["甲骨文描述", "金文描述", "小篆描述", "楷书描述"],
-        "relatedCharacters": ["相关汉字1", "相关汉字2"...],
-        "commonWords": ["常见词1", "常见词2"...]
-      }
-      只返回JSON，不要有其他文字。`;
+{
+  "character": "${character}",
+  "type": "汉字类型(独体象形/基础会意/复合形声)",
+  "level": 适合学习的年级数字(1-6),
+  "explanation": "详细解释，包括构字理据、本义、演变等",
+  "components": ["组成部件列表"],
+  "evolution": ["甲骨文描述", "金文描述", "小篆描述", "楷书描述"],
+  "relatedCharacters": ["相关汉字1", "相关汉字2"...],
+  "commonWords": ["常见词1", "常见词2"...]
+}
+只返回JSON，不要有其他文字。`;
       
       const response = await this._callDeepSeekAPI(prompt);
       let characterData;
@@ -60,6 +61,7 @@ class AICharacterService {
         }
       } catch (parseError) {
         console.warn("解析AI响应失败:", parseError.message);
+        console.info("原始响应:", response);
         
         // 创建基本结构的对象
         characterData = {
@@ -99,7 +101,7 @@ class AICharacterService {
     const patterns = [
       /```json\s*([\s\S]*?)\s*```/i, // Markdown风格的JSON代码块
       /```\s*([\s\S]*?)\s*```/i,     // 一般的代码块
-      /\{[\s\S]*\}/                  // 花括号包围的JSON
+      /\{[\s\S]*\}/                  // 花括号包含的JSON
     ];
     
     for (const pattern of patterns) {
@@ -174,11 +176,11 @@ class AICharacterService {
     }
     
     const prompt = `请详细分析汉字"${character}"的结构组成、字源演变和文化含义，包括：
-      1. 该字的部件拆解和构字理据
-      2. 从甲骨文、金文到小篆、楷书的演变过程
-      3. 字的本义和引申义
-      4. 与该字相关的文化背景
-      请以适合小学生理解的方式组织回答，语言生动有趣，内容既要专业又要通俗易懂。`;
+1. 该字的部件拆解和构字理据
+2. 从甲骨文、金文到小篆、楷书的演变过程
+3. 字的本义和引申义
+4. 与该字相关的文化背景
+请以适合小学生理解的方式组织回答，语言生动有趣，内容既要专业又要通俗易懂。`;
     
     try {
       const analysis = await this._callDeepSeekAPI(prompt);
@@ -206,8 +208,8 @@ class AICharacterService {
     }
     
     const prompt = `请详细描述汉字"${character}"从甲骨文到现代汉字的演变过程。
-      包括各个历史时期的字形变化及其理据。描述要生动形象，适合小学生理解。
-      如果您知道具体的字形演变，请简要描述每个阶段的视觉特征，如果不确定，请基于汉字构形原理进行合理推测。`;
+包括各个历史时期的字形变化及其理据。描述要生动形象，适合小学生理解。
+如果您知道具体的字形演变，请简要描述每个阶段的视觉特征，如果不确定，请基于汉字构形原理进行合理推测。`;
     
     try {
       const evolution = await this._callDeepSeekAPI(prompt);
@@ -239,15 +241,15 @@ class AICharacterService {
     
     try {
       const prompt = `请推荐${count}个适合小学${level}年级学生学习的汉字。
-      请按照"独体象形→基础会意→复合形声"的学习顺序推荐。
-      直接返回JSON格式:
-      {
-        "characters": [
-          {"character": "字1", "type": "类型", "reason": "推荐理由"},
-          {"character": "字2", "type": "类型", "reason": "推荐理由"}
-        ]
-      }
-      只返回JSON，不要有其他文字。`;
+请按照"独体象形→基础会意→复合形声"的学习顺序推荐。
+直接返回JSON格式:
+{
+  "characters": [
+    {"character": "字1", "type": "类型", "reason": "推荐理由"},
+    {"character": "字2", "type": "类型", "reason": "推荐理由"}
+  ]
+}
+只返回JSON，不要有其他文字。`;
       
       const response = await this._callDeepSeekAPI(prompt);
       let recommendedChars;
@@ -307,15 +309,15 @@ class AICharacterService {
     
     try {
       const prompt = `请推荐${count}个与"${interest}"相关的汉字，适合小学${level}年级学生学习。
-      请按照"独体象形→基础会意→复合形声"的学习顺序推荐。
-      直接返回JSON格式:
-      {
-        "characters": [
-          {"character": "字1", "type": "类型", "reason": "推荐理由"},
-          {"character": "字2", "type": "类型", "reason": "推荐理由"}
-        ]
-      }
-      只返回JSON，不要有其他文字。`;
+请按照"独体象形→基础会意→复合形声"的学习顺序推荐。
+直接返回JSON格式:
+{
+  "characters": [
+    {"character": "字1", "type": "类型", "reason": "推荐理由"},
+    {"character": "字2", "type": "类型", "reason": "推荐理由"}
+  ]
+}
+只返回JSON，不要有其他文字。`;
       
       const response = await this._callDeepSeekAPI(prompt);
       let recommendedChars;
@@ -370,17 +372,17 @@ class AICharacterService {
     }
     
     const prompt = `请根据汉字"${character}"，推荐5-8个与之相关的汉字${interestPrompt}。
-      相关汉字应符合以下条件：
-      1. 与"${character}"形、音、义有关联
-      2. 难度适合小学${level}年级的学生
-      3. 遵循"独体象形→基础会意→复合形声"的学习顺序
-      
-      请按照以下JSON格式返回，不要包含其他文本：
-      {
-        "related_characters": [
-          {"character": "字", "relation": "关系说明", "type": "类型"}
-        ]
-      }`;
+相关汉字应符合以下条件：
+1. 与"${character}"形、音、义有关联
+2. 难度适合小学${level}年级的学生
+3. 遵循"独体象形→基础会意→复合形声"的学习顺序
+
+请按照以下JSON格式返回，不要包含其他文本：
+{
+  "related_characters": [
+    {"character": "字", "relation": "关系说明", "type": "类型"}
+  ]
+}`;
     
     try {
       const response = await this._callDeepSeekAPI(prompt);
@@ -430,7 +432,7 @@ class AICharacterService {
           'Authorization': `Bearer ${DEEPSEEK_API_KEY}`
         },
         body: JSON.stringify({
-          model: "deepseek-chat", // DeepSeek-V3
+          model: "deepseek-chat", // 使用 DeepSeek-V3 模型
           messages: [
             { 
               role: "system", 
