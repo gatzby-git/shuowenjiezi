@@ -106,7 +106,6 @@ class AICharacterService {
       const match = text.match(pattern);
       if (match && match[1]) {
         try {
-          // 尝试验证提取的内容是否为有效JSON
           JSON.parse(match[1]);
           return match[1];
         } catch (e) {
@@ -114,7 +113,6 @@ class AICharacterService {
         }
       } else if (match) {
         try {
-          // 当模式不包含捕获组时
           JSON.parse(match[0]);
           return match[0];
         } catch (e) {
@@ -138,7 +136,6 @@ class AICharacterService {
         
         if (bracketCount === 0) {
           const jsonStr = text.substring(startIdx, endIdx);
-          // 验证是否为有效JSON
           JSON.parse(jsonStr);
           return jsonStr;
         }
@@ -154,13 +151,12 @@ class AICharacterService {
   _extractPlainText(text, maxLength = 1000) {
     if (!text) return "";
     
-    // 移除可能的Markdown格式和代码块
     const cleanText = text
-      .replace(/```[\s\S]*?```/g, '') // 移除代码块
-      .replace(/\[.*?\]\(.*?\)/g, '')  // 移除链接
-      .replace(/#+\s/g, '')            // 移除标题符号
-      .replace(/\*\*/g, '')            // 移除粗体
-      .replace(/\*/g, '')              // 移除斜体
+      .replace(/```[\s\S]*?```/g, '')
+      .replace(/\[.*?\]\(.*?\)/g, '')
+      .replace(/#+\s/g, '')
+      .replace(/\*\*/g, '')
+      .replace(/\*/g, '')
       .trim();
     
     return cleanText.substring(0, maxLength);
@@ -168,7 +164,6 @@ class AICharacterService {
   
   // 分析汉字结构和来源
   async analyzeCharacter(character) {
-    // 验证输入
     if (!character || typeof character !== 'string' || character.length !== 1) {
       return "请提供有效的单个汉字进行分析。";
     }
@@ -188,7 +183,6 @@ class AICharacterService {
     try {
       const analysis = await this._callDeepSeekAPI(prompt);
       
-      // 存入缓存
       if (!this.cache.analyses) this.cache.analyses = {};
       this.cache.analyses[cacheKey] = analysis;
       this._saveCache();
@@ -202,7 +196,6 @@ class AICharacterService {
   
   // 获取汉字演化图谱描述
   async generateEvolutionDescription(character) {
-    // 验证输入
     if (!character || typeof character !== 'string' || character.length !== 1) {
       return "请提供有效的单个汉字查询演化过程。";
     }
@@ -219,7 +212,6 @@ class AICharacterService {
     try {
       const evolution = await this._callDeepSeekAPI(prompt);
       
-      // 存入缓存
       if (!this.cache.evolutions) this.cache.evolutions = {};
       this.cache.evolutions[cacheKey] = evolution;
       this._saveCache();
@@ -233,17 +225,15 @@ class AICharacterService {
   
   // 根据级别获取推荐汉字
   async getRecommendedCharactersByLevel(level, count = 10) {
-    // 验证输入
     level = parseInt(level) || 1;
     if (level < 1 || level > 6) level = 1;
     count = parseInt(count) || 10;
     if (count < 1 || count > 20) count = 10;
     
-    // 检查缓存
     const cacheKey = `level_${level}`;
     if (this.cache.recommendations && 
         this.cache.recommendations[cacheKey] && 
-        this.cache.recommendations[cacheKey].timestamp > Date.now() - 86400000) { // 一天缓存
+        this.cache.recommendations[cacheKey].timestamp > Date.now() - 86400000) {
       return this.cache.recommendations[cacheKey].data;
     }
     
@@ -267,8 +257,6 @@ class AICharacterService {
         if (jsonStr) {
           const data = JSON.parse(jsonStr);
           recommendedChars = data.characters || [];
-          
-          // 验证数据格式
           recommendedChars = recommendedChars.filter(item => 
             item && typeof item === 'object' && item.character && 
             typeof item.character === 'string' && item.character.length === 1
@@ -281,12 +269,10 @@ class AICharacterService {
         return this._getDefaultCharacters(level);
       }
       
-      // 如果没有有效推荐，使用默认值
       if (!recommendedChars || recommendedChars.length === 0) {
         return this._getDefaultCharacters(level);
       }
       
-      // 存入缓存
       if (!this.cache.recommendations) this.cache.recommendations = {};
       this.cache.recommendations[cacheKey] = {
         timestamp: Date.now(),
@@ -303,7 +289,6 @@ class AICharacterService {
   
   // 根据兴趣获取推荐汉字
   async getRecommendedCharactersByInterest(interest, level, count = 10) {
-    // 验证输入
     if (!interest || typeof interest !== 'string') {
       return this._getDefaultCharacters(level);
     }
@@ -313,7 +298,6 @@ class AICharacterService {
     count = parseInt(count) || 10;
     if (count < 1 || count > 20) count = 10;
     
-    // 检查缓存
     const cacheKey = `interest_${interest}_level_${level}`;
     if (this.cache.recommendations && 
         this.cache.recommendations[cacheKey] && 
@@ -341,8 +325,6 @@ class AICharacterService {
         if (jsonStr) {
           const data = JSON.parse(jsonStr);
           recommendedChars = data.characters || [];
-          
-          // 验证数据格式
           recommendedChars = recommendedChars.filter(item => 
             item && typeof item === 'object' && item.character && 
             typeof item.character === 'string' && item.character.length === 1
@@ -355,12 +337,10 @@ class AICharacterService {
         return this._getDefaultCharacters(level);
       }
       
-      // 如果没有有效推荐，使用默认值
       if (!recommendedChars || recommendedChars.length === 0) {
         return this._getDefaultCharacters(level);
       }
       
-      // 存入缓存
       if (!this.cache.recommendations) this.cache.recommendations = {};
       this.cache.recommendations[cacheKey] = {
         timestamp: Date.now(),
@@ -377,12 +357,11 @@ class AICharacterService {
   
   // 获取相关汉字
   async getRelatedCharacters(character, userProfile = {}) {
-    // 验证输入
     if (!character || typeof character !== 'string' || character.length !== 1) {
       return { related_characters: [] };
     }
     
-    const level = parseInt(userProfile.level) || 1;
+    const level = parseInt(userProfile.grade) || 1;
     const interests = Array.isArray(userProfile.interests) ? userProfile.interests : [];
     
     let interestPrompt = "";
@@ -407,24 +386,18 @@ class AICharacterService {
       const response = await this._callDeepSeekAPI(prompt);
       
       try {
-        // 尝试从文本中提取JSON
         const jsonStr = this._extractJSON(response);
         if (jsonStr) {
           const data = JSON.parse(jsonStr);
-          
-          // 确保返回格式正确
           if (data.related_characters && Array.isArray(data.related_characters)) {
-            // 过滤无效数据
             data.related_characters = data.related_characters.filter(item => 
               item && typeof item === 'object' && item.character && 
               typeof item.character === 'string' && item.character.length === 1
             );
-            
             return data;
           }
         }
         
-        // 如果无法解析或格式不符，使用简单处理
         const chars = response.split(/[,，、]/)
           .map(c => c.trim())
           .filter(c => c.length === 1)
@@ -469,12 +442,11 @@ class AICharacterService {
             }
           ],
           max_tokens: 1000,
-          temperature: 0.5, // 降低随机性提高结果稳定性
+          temperature: 0.5,
           top_p: 0.9
         })
       });
       
-      // 检查响应状态
       if (!response.ok) {
         const errorData = await response.text();
         throw new Error(`API调用失败: ${response.status} - ${errorData}`);
@@ -482,7 +454,6 @@ class AICharacterService {
       
       const data = await response.json();
       
-      // 验证响应格式
       if (!data.choices || !data.choices[0] || !data.choices[0].message || !data.choices[0].message.content) {
         throw new Error("API响应格式无效");
       }
@@ -490,16 +461,12 @@ class AICharacterService {
       return data.choices[0].message.content;
     } catch (error) {
       console.error(`DeepSeek API调用错误 (尝试 ${retryCount + 1}/${this.maxRetries + 1}):`, error.message);
-      
-      // 实现重试机制
       if (retryCount < this.maxRetries) {
-        const backoffTime = Math.pow(2, retryCount) * 1000; // 指数退避策略
+        const backoffTime = Math.pow(2, retryCount) * 1000;
         console.log(`${backoffTime}毫秒后重试...`);
-        
         await new Promise(resolve => setTimeout(resolve, backoffTime));
         return this._callDeepSeekAPI(prompt, retryCount + 1);
       }
-      
       throw error;
     }
   }
@@ -513,7 +480,6 @@ class AICharacterService {
         return parsedCache || {
           characters: {},
           recommendations: {},
-          pathways: {},
           analyses: {},
           evolutions: {}
         };
@@ -525,7 +491,6 @@ class AICharacterService {
     return {
       characters: {},
       recommendations: {},
-      pathways: {},
       analyses: {},
       evolutions: {}
     };
@@ -534,23 +499,18 @@ class AICharacterService {
   // 保存缓存到localStorage
   _saveCache() {
     try {
-      // 限制缓存大小防止超出localStorage配额
       const cacheStr = JSON.stringify(this.cache);
-      if (cacheStr.length > 4.5 * 1024 * 1024) { // 接近5MB限制
+      if (cacheStr.length > 4.5 * 1024 * 1024) {
         console.warn("缓存接近大小限制，执行清理...");
-        // 清理recommendations缓存(非关键数据)
         this.cache.recommendations = {};
       }
       
       localStorage.setItem('aiCharacterCache', JSON.stringify(this.cache));
     } catch (e) {
       console.warn("保存缓存失败:", e.message);
-      
-      // 如果是配额错误，清理部分缓存
       if (e.name === 'QuotaExceededError' || e.message.includes('quota')) {
         this.cache.recommendations = {};
         this.cache.analyses = {};
-        // 保留核心汉字数据
         try {
           localStorage.setItem('aiCharacterCache', JSON.stringify(this.cache));
         } catch (retryError) {

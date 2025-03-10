@@ -23,7 +23,6 @@ const firebaseConfig = {
     async getCharacter(character) {
       try {
         const characterDoc = await db.collection("characters").doc(character).get();
-        
         if (characterDoc.exists) {
           return characterDoc.data();
         } else {
@@ -86,7 +85,6 @@ const firebaseConfig = {
     async getLearningPathway(grade) {
       try {
         const pathwayDoc = await db.collection("learningPathways").doc(grade.toString()).get();
-        
         if (pathwayDoc.exists) {
           return pathwayDoc.data();
         } else {
@@ -103,7 +101,6 @@ const firebaseConfig = {
     async getInterestCategories() {
       try {
         const categoriesDoc = await db.collection("settings").doc("interestCategories").get();
-        
         if (categoriesDoc.exists) {
           return categoriesDoc.data();
         } else {

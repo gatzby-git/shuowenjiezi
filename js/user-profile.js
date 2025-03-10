@@ -1,4 +1,5 @@
-// 用户画像管理
+// 用户画像管理模块
+
 class UserProfileManager {
     constructor() {
       // 尝试从本地存储加载用户画像
@@ -11,9 +12,9 @@ class UserProfileManager {
       }
     }
     
-    // 获取当前用户画像
+    // 获取当前用户画像（返回副本以避免直接修改）
     getProfile() {
-      return { ...this.profile }; // 返回副本避免直接修改
+      return { ...this.profile };
     }
     
     // 更新用户兴趣
@@ -28,7 +29,7 @@ class UserProfileManager {
     markCharacterAsLearned(character, proficiency = 1) {
       const timestamp = new Date().toISOString();
       
-      // 检查字是否已经学习过
+      // 检查该汉字是否已存在于已学列表中
       const existingIndex = this.profile.learnedCharacters.findIndex(c => c.character === character);
       
       if (existingIndex >= 0) {
@@ -50,15 +51,13 @@ class UserProfileManager {
         this.profile.stats.totalLearned += 1;
       }
       
-      // 更新最近活动
+      // 更新最后活动时间
       this.profile.lastActivity = timestamp;
       
-      // 根据已学习字数调整级别
+      // 根据已学习汉字数量更新学习级别
       this._updateLevel();
       
-      // 保存更新后的画像
       this._saveProfile();
-      
       return this.profile;
     }
     
@@ -77,26 +76,28 @@ class UserProfileManager {
       return this.profile;
     }
     
-    // 私有方法：创建默认用户画像
+    // ---------- 私有方法 ----------
+    
+    // 创建默认用户画像
     _createDefaultProfile() {
       return {
         userId: `user_${Date.now()}`,
         name: "小学生",
-        grade: 1, // 默认一年级
-        level: 1, // 学习水平
+        grade: 1,         // 默认一年级
+        level: 1,         // 学习水平
         interests: ["自然", "动物"], // 默认兴趣
-        learnedCharacters: [], // 已学习的汉字
-        currentLearningPath: "独体象形", // 当前学习路径
+        learnedCharacters: [],
+        currentLearningPath: "独体象形",
         lastActivity: new Date().toISOString(),
         stats: {
-          totalLearned: 0, // 总共学习的汉字数
-          streak: 0, // 连续学习天数
-          sessionsCompleted: 0 // 完成的学习会话
+          totalLearned: 0,
+          streak: 0,
+          sessionsCompleted: 0
         }
       };
     }
     
-    // 私有方法：从本地存储加载用户画像
+    // 从本地存储加载用户画像
     _loadProfile() {
       try {
         const savedProfile = localStorage.getItem('userProfile');
@@ -107,7 +108,7 @@ class UserProfileManager {
       }
     }
     
-    // 私有方法：保存用户画像到本地存储
+    // 保存用户画像到本地存储
     _saveProfile() {
       try {
         localStorage.setItem('userProfile', JSON.stringify(this.profile));
@@ -116,10 +117,9 @@ class UserProfileManager {
       }
     }
     
-    // 私有方法：根据学习进度更新级别
+    // 根据已学习汉字数量更新用户级别
     _updateLevel() {
       const count = this.profile.learnedCharacters.length;
-      // 简单的级别计算逻辑，可以根据需要调整
       if (count >= 50) this.profile.level = 3;
       else if (count >= 20) this.profile.level = 2;
       else this.profile.level = 1;
