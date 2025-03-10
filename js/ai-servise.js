@@ -1,16 +1,24 @@
-// DeepSeek AI服务封装
+// DeepSeek AI服务封装 - 优化版
 
 const DEEPSEEK_API_KEY = "sk-ad01995ea5054ad7999f4ae89e88592a"; // 您的API密钥
-const API_URL = "https://api.deepseek.com/v1/chat/completions"; // DeepSeek API兼容OpenAI的端点
+const API_BASE_URL = "https://api.deepseek.com"; // DeepSeek API基础URL
+const API_ENDPOINT = "/v1/chat/completions"; // 完整endpoint为 https://api.deepseek.com/v1/chat/completions
 
 class AICharacterService {
   constructor() {
     // 初始化缓存
     this.cache = this._loadCache();
+    this.maxRetries = 2; // 最大重试次数
   }
   
   // 获取汉字详细信息
   async getCharacter(character) {
+    // 检查输入有效性
+    if (!character || typeof character !== 'string' || character.length !== 1) {
+      console.error("无效的汉字输入:", character);
+      return null;
+    }
+    
     // 检查缓存
     if (this.cache.characters && this.cache.characters[character]) {
       console.log("从缓存中获取汉字数据:", character);
@@ -38,22 +46,27 @@ class AICharacterService {
       let characterData;
       
       try {
-        // 尝试解析JSON响应
-        const jsonMatch = response.match(/\{[\s\S]*\}/);
+        // 尝试解析JSON响应 - 使用更健壮的方法
+        const jsonMatch = this._extractJSON(response);
         if (jsonMatch) {
-          characterData = JSON.parse(jsonMatch[0]);
+          characterData = JSON.parse(jsonMatch);
+          
+          // 验证必要字段
+          if (!characterData.character) {
+            characterData.character = character;
+          }
         } else {
-          throw new Error("无法解析JSON响应");
+          throw new Error("无法从响应中提取JSON");
         }
       } catch (parseError) {
-        console.error("解析AI响应失败:", parseError);
+        console.warn("解析AI响应失败:", parseError.message);
         
         // 创建基本结构的对象
         characterData = {
           character: character,
           type: "未知",
           level: 1,
-          explanation: response.substring(0, 500),
+          explanation: this._extractPlainText(response, 500),
           components: [],
           evolution: [],
           relatedCharacters: [],
@@ -68,7 +81,7 @@ class AICharacterService {
       
       return characterData;
     } catch (error) {
-      console.error("AI汉字数据获取失败:", error);
+      console.error("AI汉字数据获取失败:", error.message);
       return {
         character: character,
         explanation: "抱歉，无法获取该汉字的信息。",
@@ -78,8 +91,88 @@ class AICharacterService {
     }
   }
   
+  // 从文本中提取JSON
+  _extractJSON(text) {
+    if (!text) return null;
+    
+    // 尝试多种模式匹配JSON
+    const patterns = [
+      /```json\s*([\s\S]*?)\s*```/i, // Markdown风格的JSON代码块
+      /```\s*([\s\S]*?)\s*```/i,     // 一般的代码块
+      /\{[\s\S]*\}/                  // 花括号包围的JSON
+    ];
+    
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (match && match[1]) {
+        try {
+          // 尝试验证提取的内容是否为有效JSON
+          JSON.parse(match[1]);
+          return match[1];
+        } catch (e) {
+          continue; // 如果解析失败，尝试下一个模式
+        }
+      } else if (match) {
+        try {
+          // 当模式不包含捕获组时
+          JSON.parse(match[0]);
+          return match[0];
+        } catch (e) {
+          continue;
+        }
+      }
+    }
+    
+    // 如果上述模式都失败，尝试查找大括号包含的最长内容
+    try {
+      const startIdx = text.indexOf('{');
+      if (startIdx !== -1) {
+        let bracketCount = 1;
+        let endIdx = startIdx + 1;
+        
+        while (bracketCount > 0 && endIdx < text.length) {
+          if (text[endIdx] === '{') bracketCount++;
+          if (text[endIdx] === '}') bracketCount--;
+          endIdx++;
+        }
+        
+        if (bracketCount === 0) {
+          const jsonStr = text.substring(startIdx, endIdx);
+          // 验证是否为有效JSON
+          JSON.parse(jsonStr);
+          return jsonStr;
+        }
+      }
+    } catch (e) {
+      console.warn("尝试提取JSON失败:", e.message);
+    }
+    
+    return null;
+  }
+  
+  // 从响应中提取纯文本
+  _extractPlainText(text, maxLength = 1000) {
+    if (!text) return "";
+    
+    // 移除可能的Markdown格式和代码块
+    const cleanText = text
+      .replace(/```[\s\S]*?```/g, '') // 移除代码块
+      .replace(/\[.*?\]\(.*?\)/g, '')  // 移除链接
+      .replace(/#+\s/g, '')            // 移除标题符号
+      .replace(/\*\*/g, '')            // 移除粗体
+      .replace(/\*/g, '')              // 移除斜体
+      .trim();
+    
+    return cleanText.substring(0, maxLength);
+  }
+  
   // 分析汉字结构和来源
   async analyzeCharacter(character) {
+    // 验证输入
+    if (!character || typeof character !== 'string' || character.length !== 1) {
+      return "请提供有效的单个汉字进行分析。";
+    }
+    
     const cacheKey = `analysis_${character}`;
     if (this.cache.analyses && this.cache.analyses[cacheKey]) {
       return this.cache.analyses[cacheKey];
@@ -92,18 +185,28 @@ class AICharacterService {
       4. 与该字相关的文化背景
       请以适合小学生理解的方式组织回答，语言生动有趣，内容既要专业又要通俗易懂。`;
     
-    const analysis = await this._callDeepSeekAPI(prompt);
-    
-    // 存入缓存
-    if (!this.cache.analyses) this.cache.analyses = {};
-    this.cache.analyses[cacheKey] = analysis;
-    this._saveCache();
-    
-    return analysis;
+    try {
+      const analysis = await this._callDeepSeekAPI(prompt);
+      
+      // 存入缓存
+      if (!this.cache.analyses) this.cache.analyses = {};
+      this.cache.analyses[cacheKey] = analysis;
+      this._saveCache();
+      
+      return analysis;
+    } catch (error) {
+      console.error("获取汉字分析失败:", error.message);
+      return `抱歉，暂时无法分析"${character}"字。请稍后再试。`;
+    }
   }
   
   // 获取汉字演化图谱描述
   async generateEvolutionDescription(character) {
+    // 验证输入
+    if (!character || typeof character !== 'string' || character.length !== 1) {
+      return "请提供有效的单个汉字查询演化过程。";
+    }
+    
     const cacheKey = `evolution_${character}`;
     if (this.cache.evolutions && this.cache.evolutions[cacheKey]) {
       return this.cache.evolutions[cacheKey];
@@ -113,18 +216,29 @@ class AICharacterService {
       包括各个历史时期的字形变化及其理据。描述要生动形象，适合小学生理解。
       如果您知道具体的字形演变，请简要描述每个阶段的视觉特征，如果不确定，请基于汉字构形原理进行合理推测。`;
     
-    const evolution = await this._callDeepSeekAPI(prompt);
-    
-    // 存入缓存
-    if (!this.cache.evolutions) this.cache.evolutions = {};
-    this.cache.evolutions[cacheKey] = evolution;
-    this._saveCache();
-    
-    return evolution;
+    try {
+      const evolution = await this._callDeepSeekAPI(prompt);
+      
+      // 存入缓存
+      if (!this.cache.evolutions) this.cache.evolutions = {};
+      this.cache.evolutions[cacheKey] = evolution;
+      this._saveCache();
+      
+      return evolution;
+    } catch (error) {
+      console.error("获取汉字演化描述失败:", error.message);
+      return `抱歉，暂时无法获取"${character}"的演化描述。请稍后再试。`;
+    }
   }
   
   // 根据级别获取推荐汉字
   async getRecommendedCharactersByLevel(level, count = 10) {
+    // 验证输入
+    level = parseInt(level) || 1;
+    if (level < 1 || level > 6) level = 1;
+    count = parseInt(count) || 10;
+    if (count < 1 || count > 20) count = 10;
+    
     // 检查缓存
     const cacheKey = `level_${level}`;
     if (this.cache.recommendations && 
@@ -149,14 +263,26 @@ class AICharacterService {
       let recommendedChars;
       
       try {
-        const jsonMatch = response.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          recommendedChars = JSON.parse(jsonMatch[0]).characters;
+        const jsonStr = this._extractJSON(response);
+        if (jsonStr) {
+          const data = JSON.parse(jsonStr);
+          recommendedChars = data.characters || [];
+          
+          // 验证数据格式
+          recommendedChars = recommendedChars.filter(item => 
+            item && typeof item === 'object' && item.character && 
+            typeof item.character === 'string' && item.character.length === 1
+          );
         } else {
-          throw new Error("无法解析JSON响应");
+          throw new Error("无法从响应中提取JSON");
         }
       } catch (parseError) {
-        console.error("解析AI推荐失败:", parseError);
+        console.warn("解析AI推荐失败:", parseError.message);
+        return this._getDefaultCharacters(level);
+      }
+      
+      // 如果没有有效推荐，使用默认值
+      if (!recommendedChars || recommendedChars.length === 0) {
         return this._getDefaultCharacters(level);
       }
       
@@ -170,13 +296,23 @@ class AICharacterService {
       
       return recommendedChars;
     } catch (error) {
-      console.error("获取推荐汉字失败:", error);
+      console.error("获取推荐汉字失败:", error.message);
       return this._getDefaultCharacters(level);
     }
   }
   
   // 根据兴趣获取推荐汉字
   async getRecommendedCharactersByInterest(interest, level, count = 10) {
+    // 验证输入
+    if (!interest || typeof interest !== 'string') {
+      return this._getDefaultCharacters(level);
+    }
+    
+    level = parseInt(level) || 1;
+    if (level < 1 || level > 6) level = 1;
+    count = parseInt(count) || 10;
+    if (count < 1 || count > 20) count = 10;
+    
     // 检查缓存
     const cacheKey = `interest_${interest}_level_${level}`;
     if (this.cache.recommendations && 
@@ -201,14 +337,26 @@ class AICharacterService {
       let recommendedChars;
       
       try {
-        const jsonMatch = response.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          recommendedChars = JSON.parse(jsonMatch[0]).characters;
+        const jsonStr = this._extractJSON(response);
+        if (jsonStr) {
+          const data = JSON.parse(jsonStr);
+          recommendedChars = data.characters || [];
+          
+          // 验证数据格式
+          recommendedChars = recommendedChars.filter(item => 
+            item && typeof item === 'object' && item.character && 
+            typeof item.character === 'string' && item.character.length === 1
+          );
         } else {
-          throw new Error("无法解析JSON响应");
+          throw new Error("无法从响应中提取JSON");
         }
       } catch (parseError) {
-        console.error("解析AI推荐失败:", parseError);
+        console.warn("解析AI推荐失败:", parseError.message);
+        return this._getDefaultCharacters(level);
+      }
+      
+      // 如果没有有效推荐，使用默认值
+      if (!recommendedChars || recommendedChars.length === 0) {
         return this._getDefaultCharacters(level);
       }
       
@@ -222,15 +370,20 @@ class AICharacterService {
       
       return recommendedChars;
     } catch (error) {
-      console.error("获取兴趣推荐汉字失败:", error);
+      console.error("获取兴趣推荐汉字失败:", error.message);
       return this._getDefaultCharacters(level);
     }
   }
   
   // 获取相关汉字
-  async getRelatedCharacters(character, userProfile) {
-    const level = userProfile?.level || 1;
-    const interests = userProfile?.interests || [];
+  async getRelatedCharacters(character, userProfile = {}) {
+    // 验证输入
+    if (!character || typeof character !== 'string' || character.length !== 1) {
+      return { related_characters: [] };
+    }
+    
+    const level = parseInt(userProfile.level) || 1;
+    const interests = Array.isArray(userProfile.interests) ? userProfile.interests : [];
     
     let interestPrompt = "";
     if (interests.length > 0) {
@@ -250,54 +403,104 @@ class AICharacterService {
         ]
       }`;
     
-    const response = await this._callDeepSeekAPI(prompt);
     try {
-      // 尝试从文本中提取JSON
-      const jsonMatch = response.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]);
+      const response = await this._callDeepSeekAPI(prompt);
+      
+      try {
+        // 尝试从文本中提取JSON
+        const jsonStr = this._extractJSON(response);
+        if (jsonStr) {
+          const data = JSON.parse(jsonStr);
+          
+          // 确保返回格式正确
+          if (data.related_characters && Array.isArray(data.related_characters)) {
+            // 过滤无效数据
+            data.related_characters = data.related_characters.filter(item => 
+              item && typeof item === 'object' && item.character && 
+              typeof item.character === 'string' && item.character.length === 1
+            );
+            
+            return data;
+          }
+        }
+        
+        // 如果无法解析或格式不符，使用简单处理
+        const chars = response.split(/[,，、]/)
+          .map(c => c.trim())
+          .filter(c => c.length === 1)
+          .slice(0, 8);
+          
+        return { 
+          related_characters: chars.map(c => ({
+            character: c,
+            relation: "相关字",
+            type: "未知"
+          }))
+        };
+      } catch (e) {
+        console.warn("解析DeepSeek响应失败:", e.message);
+        return { related_characters: [] };
       }
-      // 如果无法解析JSON，返回简单处理的结果
-      return { 
-        related_characters: response.split(/[,，、]/).filter(c => c.trim().length === 1).slice(0, 6).map(c => {
-          return { character: c.trim(), relation: "相关字", type: "未知" };
-        })
-      };
-    } catch (e) {
-      console.error("解析DeepSeek响应失败:", e);
+    } catch (error) {
+      console.error("获取相关汉字失败:", error.message);
       return { related_characters: [] };
     }
   }
   
-  // 调用DeepSeek API
-  async _callDeepSeekAPI(prompt) {
+  // 调用DeepSeek API (带重试机制)
+  async _callDeepSeekAPI(prompt, retryCount = 0) {
     try {
-      const response = await fetch(API_URL, {
+      const response = await fetch(`${API_BASE_URL}${API_ENDPOINT}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${DEEPSEEK_API_KEY}`
         },
         body: JSON.stringify({
-          model: "deepseek-chat", // 或其他可用模型
+          model: "deepseek-chat", // DeepSeek-V3
           messages: [
-            { role: "system", content: "你是一位汉字专家，精通文字学、训诂学和汉字教育，尤其擅长用生动易懂的方式向小学生解释汉字的构造和历史演变。" },
-            { role: "user", content: prompt }
+            { 
+              role: "system", 
+              content: "你是一位汉字专家，精通文字学、训诂学和汉字教育，尤其擅长用生动易懂的方式向小学生解释汉字的构造和历史演变。" 
+            },
+            { 
+              role: "user", 
+              content: prompt 
+            }
           ],
           max_tokens: 1000,
-          temperature: 0.7
+          temperature: 0.5, // 降低随机性提高结果稳定性
+          top_p: 0.9
         })
       });
       
+      // 检查响应状态
       if (!response.ok) {
-        throw new Error(`API调用失败: ${response.status}`);
+        const errorData = await response.text();
+        throw new Error(`API调用失败: ${response.status} - ${errorData}`);
       }
       
       const data = await response.json();
+      
+      // 验证响应格式
+      if (!data.choices || !data.choices[0] || !data.choices[0].message || !data.choices[0].message.content) {
+        throw new Error("API响应格式无效");
+      }
+      
       return data.choices[0].message.content;
     } catch (error) {
-      console.error("DeepSeek API调用错误:", error);
-      return "抱歉，AI服务暂时无法使用。请稍后再试。";
+      console.error(`DeepSeek API调用错误 (尝试 ${retryCount + 1}/${this.maxRetries + 1}):`, error.message);
+      
+      // 实现重试机制
+      if (retryCount < this.maxRetries) {
+        const backoffTime = Math.pow(2, retryCount) * 1000; // 指数退避策略
+        console.log(`${backoffTime}毫秒后重试...`);
+        
+        await new Promise(resolve => setTimeout(resolve, backoffTime));
+        return this._callDeepSeekAPI(prompt, retryCount + 1);
+      }
+      
+      throw error;
     }
   }
   
@@ -305,31 +508,55 @@ class AICharacterService {
   _loadCache() {
     try {
       const savedCache = localStorage.getItem('aiCharacterCache');
-      return savedCache ? JSON.parse(savedCache) : {
-        characters: {},
-        recommendations: {},
-        pathways: {},
-        analyses: {},
-        evolutions: {}
-      };
+      if (savedCache) {
+        const parsedCache = JSON.parse(savedCache);
+        return parsedCache || {
+          characters: {},
+          recommendations: {},
+          pathways: {},
+          analyses: {},
+          evolutions: {}
+        };
+      }
     } catch (e) {
-      console.error("加载缓存失败:", e);
-      return {
-        characters: {},
-        recommendations: {},
-        pathways: {},
-        analyses: {},
-        evolutions: {}
-      };
+      console.warn("加载缓存失败:", e.message);
     }
+    
+    return {
+      characters: {},
+      recommendations: {},
+      pathways: {},
+      analyses: {},
+      evolutions: {}
+    };
   }
   
   // 保存缓存到localStorage
   _saveCache() {
     try {
+      // 限制缓存大小防止超出localStorage配额
+      const cacheStr = JSON.stringify(this.cache);
+      if (cacheStr.length > 4.5 * 1024 * 1024) { // 接近5MB限制
+        console.warn("缓存接近大小限制，执行清理...");
+        // 清理recommendations缓存(非关键数据)
+        this.cache.recommendations = {};
+      }
+      
       localStorage.setItem('aiCharacterCache', JSON.stringify(this.cache));
     } catch (e) {
-      console.error("保存缓存失败:", e);
+      console.warn("保存缓存失败:", e.message);
+      
+      // 如果是配额错误，清理部分缓存
+      if (e.name === 'QuotaExceededError' || e.message.includes('quota')) {
+        this.cache.recommendations = {};
+        this.cache.analyses = {};
+        // 保留核心汉字数据
+        try {
+          localStorage.setItem('aiCharacterCache', JSON.stringify(this.cache));
+        } catch (retryError) {
+          console.error("二次保存缓存仍然失败:", retryError.message);
+        }
+      }
     }
   }
   
@@ -363,20 +590,6 @@ class AICharacterService {
         {"character": "湖", "type": "形声字", "reason": "氵部与胡声"},
         {"character": "晴", "type": "形声字", "reason": "日部与青声"},
         {"character": "暖", "type": "形声字", "reason": "日部与爰声"}
-      ],
-      5: [
-        {"character": "懂", "type": "形声字", "reason": "心部与董声"},
-        {"character": "德", "type": "会意字", "reason": "从直从心"},
-        {"character": "聪", "type": "形声字", "reason": "耳部与总声"},
-        {"character": "慧", "type": "形声字", "reason": "心部与恵声"},
-        {"character": "智", "type": "形声字", "reason": "日部与知声"}
-      ],
-      6: [
-        {"character": "璀", "type": "形声字", "reason": "王部与崔声"},
-        {"character": "璨", "type": "形声字", "reason": "王部与粲声"},
-        {"character": "慈", "type": "形声字", "reason": "心部与兹声"},
-        {"character": "礼", "type": "会意字", "reason": "示部与豊声"},
-        {"character": "节", "type": "会意字", "reason": "竹部与即声"}
       ]
     };
     
