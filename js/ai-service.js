@@ -1,9 +1,14 @@
 // DeepSeek AI服务封装 - 优化版
 
-const DEEPSEEK_API_KEY = "sk-ad01995ea5054ad7999f4ae89e88592a"; // 您的API密钥
-// 根据 DeepSeek API 文档，为了兼容 OpenAI 格式，建议将 base_url 设置为 "https://api.deepseek.com/v1"
-const API_BASE_URL = "https://api.deepseek.com/v1"; 
-const API_ENDPOINT = "/chat/completions"; // 完整endpoint为 https://api.deepseek.com/v1/chat/completions
+// 方式一：使用 base_url 为 "https://api.deepseek.com/v1" ，endpoint 为 "/chat/completions"
+// const API_BASE_URL = "https://api.deepseek.com/v1";
+// const API_ENDPOINT = "/chat/completions";
+
+// 方式二：或者使用 base_url 为 "https://api.deepseek.com"，endpoint 为 "/chat/completions"
+const API_BASE_URL = "https://api.deepseek.com";
+const API_ENDPOINT = "/chat/completions";
+
+const DEEPSEEK_API_KEY = "sk-cfdf864d03294b89bfb89ded82b16313"; // 更新后的API密钥
 
 class AICharacterService {
   constructor() {
@@ -27,7 +32,7 @@ class AICharacterService {
     console.log("从AI获取汉字数据:", character);
     
     try {
-      const prompt = `请提供汉字"${character}"的以下结构化信息，直接返回JSON格式:
+      const prompt = `请提供汉字 "${character}" 的以下结构化信息，直接返回JSON格式:
 {
   "character": "${character}",
   "type": "汉字类型(独体象形/基础会意/复合形声)",
@@ -40,9 +45,9 @@ class AICharacterService {
 }
 只返回JSON，不要有其他文字。`;
       
-      let response = await this._callDeepSeekAPI(prompt, "deepseek-chat");
-      
+      const response = await this._callDeepSeekAPI(prompt);
       let characterData;
+      
       try {
         const jsonMatch = this._extractJSON(response);
         if (jsonMatch) {
@@ -54,35 +59,17 @@ class AICharacterService {
           throw new Error("无法从响应中提取JSON");
         }
       } catch (parseError) {
-        console.warn("解析 deepseek-chat 响应失败:", parseError.message);
-        console.info("deepseek-chat 原始响应:", response);
-        // 如果 deepseek-chat 解析失败，尝试使用 deepseek-reasoner 模型重新调用
-        response = await this._callDeepSeekAPI(prompt, "deepseek-reasoner");
-        try {
-          const jsonMatch = this._extractJSON(response);
-          if (jsonMatch) {
-            characterData = JSON.parse(jsonMatch);
-            if (!characterData.character) {
-              characterData.character = character;
-            }
-          } else {
-            throw new Error("无法从 deepseek-reasoner 响应中提取JSON");
-          }
-        } catch (parseError2) {
-          console.warn("解析 deepseek-reasoner 响应失败:", parseError2.message);
-          console.info("deepseek-reasoner 原始响应:", response);
-          // 若全部失败，则返回 fallback 数据
-          characterData = {
-            character: character,
-            type: "未知",
-            level: 1,
-            explanation: this._extractPlainText(response, 500) + " (deepseek 调用失败)",
-            components: [],
-            evolution: [],
-            relatedCharacters: [],
-            commonWords: []
-          };
-        }
+        console.warn("解析AI响应失败:", parseError.message);
+        characterData = {
+          character: character,
+          type: "未知",
+          level: 1,
+          explanation: this._extractPlainText(response, 500),
+          components: [],
+          evolution: [],
+          relatedCharacters: [],
+          commonWords: []
+        };
       }
       
       if (!this.cache.characters) this.cache.characters = {};
@@ -104,7 +91,8 @@ class AICharacterService {
   // 从文本中提取JSON
   _extractJSON(text) {
     if (!text) return null;
-    // 尝试使用简化逻辑：直接查找首个 '{' 到最后一个 '}'
+    
+    // 尝试直接提取从第一个 '{' 到最后一个 '}'
     const start = text.indexOf('{');
     const end = text.lastIndexOf('}');
     if (start !== -1 && end !== -1 && end > start) {
@@ -113,10 +101,11 @@ class AICharacterService {
         JSON.parse(candidate);
         return candidate;
       } catch (e) {
-        // 如果直接解析失败，则再尝试原有多模式正则方法
+        // 继续尝试后续模式
       }
     }
     
+    // 尝试多种正则模式
     const patterns = [
       /```json\s*([\s\S]*?)\s*```/i,
       /```\s*([\s\S]*?)\s*```/i,
@@ -170,7 +159,7 @@ class AICharacterService {
       return this.cache.analyses[cacheKey];
     }
     
-    const prompt = `请详细分析汉字"${character}"的结构组成、字源演变和文化含义，包括：
+    const prompt = `请详细分析汉字 "${character}" 的结构组成、字源演变和文化含义，包括：
 1. 该字的部件拆解和构字理据
 2. 从甲骨文、金文到小篆、楷书的演变过程
 3. 字的本义和引申义
@@ -178,14 +167,14 @@ class AICharacterService {
 请以适合小学生理解的方式组织回答，语言生动有趣，内容既要专业又要通俗易懂。`;
     
     try {
-      const analysis = await this._callDeepSeekAPI(prompt, "deepseek-chat");
+      const analysis = await this._callDeepSeekAPI(prompt);
       if (!this.cache.analyses) this.cache.analyses = {};
       this.cache.analyses[cacheKey] = analysis;
       this._saveCache();
       return analysis;
     } catch (error) {
       console.error("获取汉字分析失败:", error.message);
-      return `抱歉，暂时无法分析"${character}"字。deepseek 调用失败`;
+      return `抱歉，暂时无法分析 "${character}" 字。deepseek 调用失败`;
     }
   }
   
@@ -200,19 +189,19 @@ class AICharacterService {
       return this.cache.evolutions[cacheKey];
     }
     
-    const prompt = `请详细描述汉字"${character}"从甲骨文到现代汉字的演变过程。
+    const prompt = `请详细描述汉字 "${character}" 从甲骨文到现代汉字的演变过程。
 包括各个历史时期的字形变化及其理据。描述要生动形象，适合小学生理解。
-如果您知道具体的字形演变，请简要描述每个阶段的视觉特征，如果不确定，请基于汉字构形原理进行合理推测。`;
+如果您知道具体的字形演变，请简要描述每个阶段的视觉特征；如果不确定，请基于汉字构形原理进行合理推测。`;
     
     try {
-      const evolution = await this._callDeepSeekAPI(prompt, "deepseek-chat");
+      const evolution = await this._callDeepSeekAPI(prompt);
       if (!this.cache.evolutions) this.cache.evolutions = {};
       this.cache.evolutions[cacheKey] = evolution;
-      this._saveCache();  
+      this._saveCache();
       return evolution;
     } catch (error) {
       console.error("获取汉字演化描述失败:", error.message);
-      return `抱歉，暂时无法获取"${character}"的演化描述。deepseek 调用失败`;
+      return `抱歉，暂时无法获取 "${character}" 的演化描述。deepseek 调用失败`;
     }
   }
   
@@ -224,15 +213,15 @@ class AICharacterService {
     if (count < 1 || count > 20) count = 10;
     
     const cacheKey = `level_${level}`;
-    if (this.cache.recommendations && 
-        this.cache.recommendations[cacheKey] && 
+    if (this.cache.recommendations &&
+        this.cache.recommendations[cacheKey] &&
         this.cache.recommendations[cacheKey].timestamp > Date.now() - 86400000) {
       return this.cache.recommendations[cacheKey].data;
     }
     
     try {
-      const prompt = `请推荐${count}个适合小学${level}年级学生学习的汉字。
-请按照"独体象形→基础会意→复合形声"的学习顺序推荐。
+      const prompt = `请推荐 ${count} 个适合小学 ${level} 年级学生学习的汉字。
+请按照 "独体象形→基础会意→复合形声" 的学习顺序推荐。
 直接返回JSON格式:
 {
   "characters": [
@@ -242,15 +231,16 @@ class AICharacterService {
 }
 只返回JSON，不要有其他文字。`;
       
-      const response = await this._callDeepSeekAPI(prompt, "deepseek-chat");
+      const response = await this._callDeepSeekAPI(prompt);
       let recommendedChars;
+      
       try {
         const jsonStr = this._extractJSON(response);
         if (jsonStr) {
           const data = JSON.parse(jsonStr);
           recommendedChars = data.characters || [];
-          recommendedChars = recommendedChars.filter(item => 
-            item && typeof item === 'object' && item.character && 
+          recommendedChars = recommendedChars.filter(item =>
+            item && typeof item === 'object' && item.character &&
             typeof item.character === 'string' && item.character.length === 1
           );
         } else {
@@ -291,15 +281,15 @@ class AICharacterService {
     if (count < 1 || count > 20) count = 10;
     
     const cacheKey = `interest_${interest}_level_${level}`;
-    if (this.cache.recommendations && 
-        this.cache.recommendations[cacheKey] && 
+    if (this.cache.recommendations &&
+        this.cache.recommendations[cacheKey] &&
         this.cache.recommendations[cacheKey].timestamp > Date.now() - 86400000) {
       return this.cache.recommendations[cacheKey].data;
     }
     
     try {
-      const prompt = `请推荐${count}个与"${interest}"相关的汉字，适合小学${level}年级学生学习。
-请按照"独体象形→基础会意→复合形声"的学习顺序推荐。
+      const prompt = `请推荐 ${count} 个与 "${interest}" 相关的汉字，适合小学 ${level} 年级学生学习。
+请按照 "独体象形→基础会意→复合形声" 的学习顺序推荐。
 直接返回JSON格式:
 {
   "characters": [
@@ -309,15 +299,16 @@ class AICharacterService {
 }
 只返回JSON，不要有其他文字。`;
       
-      const response = await this._callDeepSeekAPI(prompt, "deepseek-chat");
+      const response = await this._callDeepSeekAPI(prompt);
       let recommendedChars;
+      
       try {
         const jsonStr = this._extractJSON(response);
         if (jsonStr) {
           const data = JSON.parse(jsonStr);
           recommendedChars = data.characters || [];
-          recommendedChars = recommendedChars.filter(item => 
-            item && typeof item === 'object' && item.character && 
+          recommendedChars = recommendedChars.filter(item =>
+            item && typeof item === 'object' && item.character &&
             typeof item.character === 'string' && item.character.length === 1
           );
         } else {
@@ -356,14 +347,14 @@ class AICharacterService {
     const interests = Array.isArray(userProfile.interests) ? userProfile.interests : [];
     let interestPrompt = "";
     if (interests.length > 0) {
-      interestPrompt = `，特别是与${interests.join('、')}相关的汉字`;
+      interestPrompt = `，特别是与 ${interests.join('、')} 相关的汉字`;
     }
     
-    const prompt = `请根据汉字"${character}"，推荐5-8个与之相关的汉字${interestPrompt}。
+    const prompt = `请根据汉字 "${character}"，推荐5-8个与之相关的汉字${interestPrompt}。
 相关汉字应符合以下条件：
-1. 与"${character}"形、音、义有关联
-2. 难度适合小学${level}年级的学生
-3. 遵循"独体象形→基础会意→复合形声"的学习顺序
+1. 与 "${character}" 形、音、义有关联
+2. 难度适合小学 ${level} 年级的学生
+3. 遵循 "独体象形→基础会意→复合形声" 的学习顺序
 
 请按照以下JSON格式返回，不要包含其他文本：
 {
@@ -373,14 +364,14 @@ class AICharacterService {
 }`;
     
     try {
-      const response = await this._callDeepSeekAPI(prompt, "deepseek-chat");
+      const response = await this._callDeepSeekAPI(prompt);
       try {
         const jsonStr = this._extractJSON(response);
         if (jsonStr) {
           const data = JSON.parse(jsonStr);
           if (data.related_characters && Array.isArray(data.related_characters)) {
-            data.related_characters = data.related_characters.filter(item => 
-              item && typeof item === 'object' && item.character && 
+            data.related_characters = data.related_characters.filter(item =>
+              item && typeof item === 'object' && item.character &&
               typeof item.character === 'string' && item.character.length === 1
             );
             return data;
@@ -390,7 +381,7 @@ class AICharacterService {
           .map(c => c.trim())
           .filter(c => c.length === 1)
           .slice(0, 8);
-        return { 
+        return {
           related_characters: chars.map(c => ({
             character: c,
             relation: "相关字",
@@ -408,7 +399,7 @@ class AICharacterService {
   }
   
   // 调用DeepSeek API (带重试机制)
-  async _callDeepSeekAPI(prompt, model = "deepseek-chat", retryCount = 0) {
+  async _callDeepSeekAPI(prompt, retryCount = 0) {
     try {
       const response = await fetch(`${API_BASE_URL}${API_ENDPOINT}`, {
         method: 'POST',
@@ -417,7 +408,7 @@ class AICharacterService {
           'Authorization': `Bearer ${DEEPSEEK_API_KEY}`
         },
         body: JSON.stringify({
-          model, // 使用传入的模型参数，默认为 deepseek-chat
+          model: "deepseek-chat", // 使用 DeepSeek-V3 模型
           messages: [
             { 
               role: "system", 
@@ -428,6 +419,7 @@ class AICharacterService {
               content: prompt 
             }
           ],
+          stream: false,  // 显式设置非流式输出
           max_tokens: 1000,
           temperature: 0.5,
           top_p: 0.9
@@ -446,14 +438,14 @@ class AICharacterService {
       
       return data.choices[0].message.content;
     } catch (error) {
-      console.error(`DeepSeek API调用错误 (尝试 ${retryCount + 1}/${this.maxRetries + 1}) 模型(${model}):`, error.message);
+      console.error(`DeepSeek API调用错误 (尝试 ${retryCount + 1}/${this.maxRetries + 1}):`, error.message);
       if (retryCount < this.maxRetries) {
         const backoffTime = Math.pow(2, retryCount) * 1000;
-        console.log(`${backoffTime}毫秒后重试...`);
+        console.log(`${backoffTime} 毫秒后重试...`);
         await new Promise(resolve => setTimeout(resolve, backoffTime));
-        return this._callDeepSeekAPI(prompt, model, retryCount + 1);
+        return this._callDeepSeekAPI(prompt, retryCount + 1);
       }
-      // 当所有重试失败后，将错误消息中附加显示“deepseek 调用失败”
+      // 如果所有尝试失败，附加错误提示 "deepseek 调用失败"
       throw new Error("deepseek 调用失败: " + error.message);
     }
   }
@@ -474,6 +466,7 @@ class AICharacterService {
     } catch (e) {
       console.warn("加载缓存失败:", e.message);
     }
+    
     return {
       characters: {},
       recommendations: {},
@@ -537,6 +530,7 @@ class AICharacterService {
         {"character": "暖", "type": "形声字", "reason": "日部与爰声"}
       ]
     };
+    
     return defaults[level] || defaults[1];
   }
 }
