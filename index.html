@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>《说文解字》AI辅助学习工具</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>《说文解字》AI辅助学习工具</h1>
+    <p>面向小学生的互动汉字学习平台</p>
+  </header>
+  <main>
+    <section id="intro">
+      <h2>系统介绍</h2>
+      <p>
+        本系统以汉字文化为载体，结合教学实践与动态推荐算法，
+        根据学生认知水平和汉字构造规律构建三阶汉字序列，提供定制化学习路线。
+      </p>
+    </section>
+    <section id="search-section">
+      <h2>汉字查询与解析</h2>
+      <form id="searchForm">
+        <label for="characterInput">请输入汉字：</label>
+        <input type="text" id="characterInput" placeholder="如：休">
+        <button type="submit">查询</button>
+      </form>
+      <div id="result">
+        <!-- 动态加载查询结果 -->
+      </div>
+    </section>
+    <section id="recommend-section">
+      <h2>动态学习推荐</h2>
+      <button id="loadRecommendation">获取推荐汉字</button>
+      <ul id="recommendList">
+        <!-- 动态加载推荐列表 -->
+      </ul>
+    </section>
+  </main>
+  <footer>
+    <p>&copy; 2025 汉字文化研究中心</p>
+  </footer>
+  <script src="app.js"></script>
+</body>
+</html>
