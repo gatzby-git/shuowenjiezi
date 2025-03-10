@@ -11,36 +11,104 @@
     <h1>《说文解字》AI辅助学习工具</h1>
     <p>面向小学生的互动汉字学习平台</p>
   </header>
+  
   <main>
-    <section id="intro">
-      <h2>系统介绍</h2>
-      <p>
-        本系统以汉字文化为载体，结合教学实践与动态推荐算法，
-        根据学生认知水平和汉字构造规律构建三阶汉字序列，提供定制化学习路线。
-      </p>
-    </section>
-    <section id="search-section">
-      <h2>汉字查询与解析</h2>
-      <form id="searchForm">
-        <label for="characterInput">请输入汉字：</label>
-        <input type="text" id="characterInput" placeholder="如：休">
-        <button type="submit">查询</button>
-      </form>
-      <div id="result">
-        <!-- 动态加载查询结果 -->
+    <div class="container">
+      <div class="left-panel">
+        <section id="user-profile-section">
+          <h2>学习者信息</h2>
+          <div id="userProfile">
+            <!-- 用户信息将动态加载 -->
+            <div class="loading-spinner">加载中...</div>
+          </div>
+          
+          <div class="user-settings">
+            <h3>个人设置</h3>
+            <div class="setting-group">
+              <label for="gradeSelect">年级：</label>
+              <select id="gradeSelect">
+                <option value="1">一年级</option>
+                <option value="2">二年级</option>
+                <option value="3">三年级</option>
+                <option value="4">四年级</option>
+                <option value="5">五年级</option>
+                <option value="6">六年级</option>
+              </select>
+            </div>
+            
+            <div class="setting-group">
+              <h4>学习兴趣：</h4>
+              <div class="interest-options">
+                <label><input type="checkbox" class="interest-checkbox" value="自然"> 自然</label>
+                <label><input type="checkbox" class="interest-checkbox" value="人文"> 人文</label>
+                <label><input type="checkbox" class="interest-checkbox" value="动物"> 动物</label>
+                <label><input type="checkbox" class="interest-checkbox" value="生活"> 生活</label>
+              </div>
+            </div>
+            
+            <button id="saveUserSettings" class="primary-button">保存设置</button>
+          </div>
+        </section>
+        
+        <section id="recommend-section">
+          <h2>学习推荐</h2>
+          <p class="section-intro">根据您的学习进度和兴趣推荐的汉字：</p>
+          <button id="loadRecommendation" class="primary-button">获取推荐汉字</button>
+          <ul id="recommendList" class="character-list">
+            <!-- 动态加载推荐列表 -->
+            <li class="loading-item">点击上方按钮获取推荐</li>
+          </ul>
+        </section>
       </div>
-    </section>
-    <section id="recommend-section">
-      <h2>动态学习推荐</h2>
-      <button id="loadRecommendation">获取推荐汉字</button>
-      <ul id="recommendList">
-        <!-- 动态加载推荐列表 -->
-      </ul>
-    </section>
+      
+      <div class="right-panel">
+        <section id="intro">
+          <h2>系统介绍</h2>
+          <p>
+            本系统以汉字文化为载体，结合DeepSeek AI与动态推荐算法，
+            根据学生认知水平和汉字构造规律构建三阶汉字序列（独体象形→基础会意→复合形声），
+            提供定制化学习路线，让汉字学习更有趣、更高效。
+          </p>
+        </section>
+        
+        <section id="search-section">
+          <h2>汉字查询与解析</h2>
+          <form id="searchForm" class="search-form">
+            <label for="characterInput">请输入汉字：</label>
+            <div class="input-group">
+              <input type="text" id="characterInput" placeholder="如：休" maxlength="1">
+              <button type="submit" class="primary-button">查询</button>
+            </div>
+          </form>
+          <div id="result" class="search-result">
+            <!-- 动态加载查询结果 -->
+            <p class="placeholder">请在上方输入一个汉字进行查询</p>
+          </div>
+        </section>
+        
+        <section id="evolution-section" class="hidden">
+          <h2>汉字演化图谱</h2>
+          <div id="evolutionContent" class="evolution-content">
+            <!-- 动态加载演化内容 -->
+          </div>
+        </section>
+      </div>
+    </div>
   </main>
+  
   <footer>
-    <p>&copy; 2025 张乐缘</p>
+    <p>&copy; 2025 汉字学习项目 | 基于DeepSeek AI技术支持</p>
   </footer>
-  <script src="app.js"></script>
+  
+  <!-- 加载Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+  
+  <!-- 按顺序加载应用脚本 -->
+  <script type="module" src="js/firebase-config.js"></script>
+  <script type="module" src="js/ai-service.js"></script>
+  <script type="module" src="js/user-profile.js"></script>
+  <script type="module" src="js/data-service.js"></script>
+  <script type="module" src="js/app.js"></script>
 </body>
 </html>
